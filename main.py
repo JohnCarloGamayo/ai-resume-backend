@@ -17,7 +17,7 @@ app = FastAPI(
 
 # Configure allowed origins from environment for deployment flexibility.
 # Use comma-separated values in CORS_ALLOW_ORIGINS, or "*" to allow all.
-raw_allowed_origins = os.getenv("CORS_ALLOW_ORIGINS", "")
+raw_allowed_origins = os.getenv("CORS_ALLOW_ORIGINS", "*")
 if raw_allowed_origins.strip() == "*":
     allowed_origins = ["*"]
 else:
