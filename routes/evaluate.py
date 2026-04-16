@@ -17,7 +17,7 @@ from services.rate_limiter import InMemoryDailyRateLimiter
 
 router = APIRouter(tags=["evaluation"])
 MAX_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024
-DAILY_EVALUATION_LIMIT = int(os.getenv("DAILY_EVALUATION_LIMIT", "2"))
+DAILY_EVALUATION_LIMIT = int(os.getenv("DAILY_EVALUATION_LIMIT", "5"))
 RATE_LIMIT_BYPASS_IPS = {
     ip.strip()
     for ip in os.getenv("RATE_LIMIT_BYPASS_IPS", "127.0.0.1,::1,localhost").split(",")
