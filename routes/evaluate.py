@@ -1,4 +1,5 @@
 import io
+import importlib
 import os
 
 import pdfplumber
@@ -15,7 +16,7 @@ from services.gemini_service import evaluate_resume_against_job, refine_resume_w
 from services.rate_limiter import InMemoryDailyRateLimiter
 
 router = APIRouter(tags=["evaluation"])
-MAX_PDF_SIZE_BYTES = 8 * 1024 * 1024
+MAX_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024
 DAILY_EVALUATION_LIMIT = int(os.getenv("DAILY_EVALUATION_LIMIT", "2"))
 RATE_LIMIT_BYPASS_IPS = {
     ip.strip()
@@ -42,24 +43,41 @@ def _get_client_ip(request: Request) -> str:
 @router.post("/extract-resume-text", response_model=ExtractResumeResponse)
 async def extract_resume_text(file: UploadFile = File(...)) -> ExtractResumeResponse:
     filename = (file.filename or "").lower()
-    if not filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF uploads are supported.")
+    is_pdf = filename.endswith(".pdf")
+    is_docx = filename.endswith(".docx")
+
+    if not (is_pdf or is_docx):
+        raise HTTPException(status_code=400, detail="Only PDF or DOCX uploads are supported.")
 
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
-    if len(content) > MAX_PDF_SIZE_BYTES:
-        raise HTTPException(status_code=413, detail="PDF is too large. Limit is 8 MB.")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(content) > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large. Limit is 8 MB.")
 
-    try:
-        with pdfplumber.open(io.BytesIO(content)) as pdf:
-            text_chunks = [(page.extract_text() or "").strip() for page in pdf.pages]
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail="Unable to read PDF content.") from exc
+    if is_pdf:
+        try:
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                text_chunks = [(page.extract_text() or "").strip() for page in pdf.pages]
+            resume_text = "\n".join(chunk for chunk in text_chunks if chunk).strip()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail="Unable to read PDF content.") from exc
+    else:
+        try:
+            docx2txt = importlib.import_module("docx2txt")
+        except ModuleNotFoundError as exc:  # pragma: no cover
+            raise HTTPException(
+                status_code=500,
+                detail="DOCX processing is not available on the server.",
+            ) from exc
 
-    resume_text = "\n".join(chunk for chunk in text_chunks if chunk).strip()
+        try:
+            resume_text = (docx2txt.process(io.BytesIO(content)) or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail="Unable to read DOCX content.") from exc
+
     if len(resume_text) < 50:
-        raise HTTPException(status_code=400, detail="Could not extract enough text from the PDF.")
+        raise HTTPException(status_code=400, detail="Could not extract enough text from the file.")
 
     return ExtractResumeResponse(resume_text=resume_text)
 
